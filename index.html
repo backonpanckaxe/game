@@ -44,7 +44,7 @@
   #tray{position:absolute;left:303px;top:113px;width:72px;height:552px;background:var(--bg-primary);
         border-radius:16px 0 0 16px;padding:8px;display:flex;flex-direction:column;gap:4px}
   .card{width:56px;height:56px;border:1px solid var(--border-primary);border-radius:8px;
-        position:relative;background:var(--bg-primary);cursor:pointer}
+        position:relative;background:var(--bg-primary);cursor:pointer;touch-action:none}
   .card.selected{border-color:var(--pc);background:color-mix(in srgb,var(--pc) 12%,white)}
   .card.ghost{border-color:transparent;background:var(--ghost-bg);cursor:default}
   .mini{position:absolute}
@@ -70,7 +70,7 @@
   /* ---------- Фигуры на поле ---------- */
   #pieces-layer{position:absolute;left:16px;top:121px;width:266px;height:536px;pointer-events:none}
   .bp{position:absolute;pointer-events:none}
-  .bp i{position:absolute;width:50px;height:50px;border-radius:8px;background:var(--pc);pointer-events:auto}
+  .bp i{position:absolute;width:50px;height:50px;border-radius:8px;background:var(--pc);pointer-events:auto;touch-action:none}
 
   /* ---------- Драг ---------- */
   #drag-layer{position:absolute;inset:0;pointer-events:none;z-index:40}
@@ -655,8 +655,10 @@ function onDown(e,src){
   if(ptr)return;
   if(src.from==='tray'&&state[src.piece].placed)return;
   e.preventDefault();
+  try{ e.currentTarget.setPointerCapture(e.pointerId); }catch(_){}
   ptr={src,startX:e.clientX,startY:e.clientY,drag:false,float:null,id:e.pointerId,
-       timer:setTimeout(()=>startDrag(e.clientX,e.clientY),160)};
+       capEl:e.currentTarget,
+       timer:setTimeout(()=>startDrag(ptr.startX,ptr.startY),140)};
   addEventListener('pointermove',onMove);
   addEventListener('pointerup',onUp);
   addEventListener('pointercancel',onUp);
@@ -707,6 +709,7 @@ function onUp(e){
   removeEventListener('pointermove',onMove);
   removeEventListener('pointerup',onUp);
   removeEventListener('pointercancel',onUp);
+  try{ ptr.capEl&&ptr.capEl.releasePointerCapture(ptr.id); }catch(_){}
   const p=ptr;ptr=null;
   const i=p.src.piece;
   if(!p.drag){
@@ -715,11 +718,21 @@ function onUp(e){
     else{flyBack(i,boardFloatOf(i));}
     return;
   }
-  /* дроп */
+  /* дроп: снап к сетке с допуском — ищем ближайшую позицию, куда фигура влезает */
   const f=p.float;
   const fx=parseFloat(f.style.left), fy=parseFloat(f.style.top);
-  const col=Math.round((fx-LAYER_X)/PITCH), row=Math.round((fy-LAYER_Y)/PITCH);
-  const cells=tryFit(state[i].orient,row,col);
+  const baseCol=(fx-LAYER_X)/PITCH, baseRow=(fy-LAYER_Y)/PITCH;
+  const col0=Math.round(baseCol), row0=Math.round(baseRow);
+  let cells=null, best=1e9;
+  for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){
+    const rr=row0+dr, cc=col0+dc;
+    const fit=tryFit(state[i].orient,rr,cc);
+    if(fit){
+      const dist=Math.hypot(rr-baseRow,cc-baseCol);
+      if(dist<best){best=dist;cells=fit;}
+    }
+  }
+  const row=row0, col=col0;
   if(cells){
     f.remove();
     place(i,cells);
